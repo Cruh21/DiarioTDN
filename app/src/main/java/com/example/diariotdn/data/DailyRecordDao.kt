@@ -18,6 +18,9 @@ interface DailyRecordDao {
     @Query("SELECT * FROM daily_records WHERE date = :date ORDER BY timestamp ASC")
     suspend fun getRecordsByDateDirect(date: String): List<DailyRecord>
 
+    @Query("SELECT * FROM daily_records ORDER BY date DESC, timestamp ASC")
+    fun getAllRecordsFlow(): Flow<List<DailyRecord>>
+
     @Query("SELECT * FROM daily_records ORDER BY timestamp ASC")
     suspend fun getAllRecordsDirect(): List<DailyRecord>
 

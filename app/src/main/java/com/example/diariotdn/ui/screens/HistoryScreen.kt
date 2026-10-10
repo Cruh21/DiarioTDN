@@ -80,6 +80,8 @@ fun HistoryScreen(
     val historySearchQuery by viewModel.historySearchQuery.collectAsState()
     val historyStatusFilter by viewModel.historyStatusFilter.collectAsState()
     val historyMostrarLotes by viewModel.historyMostrarLotes.collectAsState()
+    val isGlobalSearch by viewModel.isGlobalSearch.collectAsState()
+    val groupedGlobalSearchResults by viewModel.groupedGlobalSearchResults.collectAsState()
     val allSavedDates by viewModel.allSavedDates.collectAsState()
 
     val cantidad by viewModel.cantidad.collectAsState()
@@ -181,7 +183,7 @@ fun HistoryScreen(
                                             color = MaterialTheme.colorScheme.onSecondaryContainer
                                         )
                                         Text(
-                                            text = "Fecha seleccionada: $displaySelectedDate",
+                                            text = if (isGlobalSearch && historySearchQuery.isNotBlank()) "Modo Búsqueda Global Activo" else "Fecha seleccionada: $displaySelectedDate",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
                                         )
@@ -202,7 +204,7 @@ fun HistoryScreen(
                             }
 
                             // Lista de chips con fechas que tienen registros guardados
-                            if (allSavedDates.isNotEmpty()) {
+                            if (allSavedDates.isNotEmpty() && (!isGlobalSearch || historySearchQuery.isBlank())) {
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Text(
                                     text = "Fechas con registros:",
@@ -227,14 +229,16 @@ fun HistoryScreen(
                     }
                 }
 
-                // Buscador Dinámico e Insensible a Tildes + Filtros de Estatus en Historial
+                // Buscador Dinámico + Filtro de Búsqueda Global y Estatus
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = historySearchQuery,
                             onValueChange = { viewModel.updateHistorySearchQuery(it) },
                             modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("Buscar en registros del $displaySelectedDate...") },
+                            placeholder = {
+                                Text(if (isGlobalSearch) "Buscar en TODA la base de datos..." else "Buscar en registros del $displaySelectedDate...")
+                            },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.Search,
@@ -255,10 +259,17 @@ fun HistoryScreen(
                             singleLine = true
                         )
 
-                        // Fila de Filtros Chip por Estatus
+                        // Fila de Filtros Chip (Búsqueda Global + Estatus + Lotes)
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            item {
+                                FilterChip(
+                                    selected = isGlobalSearch,
+                                    onClick = { viewModel.toggleGlobalSearch(!isGlobalSearch) },
+                                    label = { Text("🌐 Búsqueda Global") }
+                                )
+                            }
                             item {
                                 FilterChip(
                                     selected = (historyStatusFilter == null),
@@ -298,103 +309,166 @@ fun HistoryScreen(
                     }
                 }
 
-                // Encabezado de lista de registros y Botón Copiar Registros de este Día
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Registros del $displaySelectedDate (${filteredHistoryRecords.size})",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-
-                        if (filteredHistoryRecords.isNotEmpty()) {
-                            OutlinedButton(
-                                onClick = {
-                                    viewModel.copyRecordsToClipboard(
-                                        context = context,
-                                        records = filteredHistoryRecords,
-                                        labelDate = displaySelectedDate
-                                    )
-                                },
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ContentCopy,
-                                    contentDescription = null,
-                                    modifier = Modifier.padding(end = 6.dp)
+                // RENDIMIENTO CONDICIONAL: MODO BÚSQUEDA GLOBAL AGRUPADA VS FECHA INDIVIDUAL
+                if (isGlobalSearch && historySearchQuery.isNotBlank()) {
+                    if (groupedGlobalSearchResults.isEmpty()) {
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                                 )
-                                Text("Copiar Registros")
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(24.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "No se encontraron resultados globales para \"$historySearchQuery\".",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        textAlign = TextAlign.Center,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
-                    }
-                }
-
-                // Lista de registros correspondientes con clickeable para Editar
-                if (filteredHistoryRecords.isEmpty()) {
-                    item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                            )
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(24.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
+                    } else {
+                        groupedGlobalSearchResults.forEach { (displayDateHeader, recordsList) ->
+                            item(key = "header_$displayDateHeader") {
                                 Text(
-                                    text = if (historySearchQuery.isNotBlank() || historyStatusFilter != null)
-                                        "No hay registros que coincidan con los filtros."
-                                    else
-                                        "No hay registros guardados para el $displaySelectedDate.\nToca el botón '+' para agregar uno.",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    textAlign = TextAlign.Center,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    text = "📅 $displayDateHeader (${recordsList.size})",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
                                 )
+                            }
+
+                            items(
+                                items = recordsList,
+                                key = { record -> record.id }
+                            ) { record ->
+                                Box(modifier = Modifier.animateItem()) {
+                                    RecordItem(
+                                        record = record,
+                                        onDelete = { rec -> recordToDelete = rec },
+                                        onStatusClick = { rec ->
+                                            if (rec.getTaskStatus() == TaskStatus.COMPLETADO) {
+                                                recordToRevertStatus = rec
+                                            } else {
+                                                viewModel.cycleRecordStatus(rec)
+                                            }
+                                        },
+                                        onClick = {
+                                            recordToEdit = record
+                                            editCantidad = record.cantidad
+                                            editProducto = record.producto
+                                            editRango = record.rango
+                                            editApellidosNombres = record.apellidosNombres
+                                            editCodigoUnidad = record.codigoUnidad.removePrefix("P-")
+                                            editTextoExtra = record.textoExtra
+                                            errorMessage = null
+                                            showFormSheet = true
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
                 } else {
-                    items(
-                        items = filteredHistoryRecords,
-                        key = { record -> record.id }
-                    ) { record ->
-                        Box(modifier = Modifier.animateItem()) {
-                            RecordItem(
-                                record = record,
-                                onCopySingle = { rec ->
-                                    viewModel.copySingleRecord(context, rec)
-                                },
-                                onDelete = { rec ->
-                                    recordToDelete = rec
-                                },
-                                onStatusClick = { rec ->
-                                    if (rec.getTaskStatus() == TaskStatus.COMPLETADO) {
-                                        recordToRevertStatus = rec
-                                    } else {
-                                        viewModel.cycleRecordStatus(rec)
-                                    }
-                                },
-                                onClick = {
-                                    // Cargar datos del registro para Modo Editar en Historial
-                                    recordToEdit = record
-                                    editCantidad = record.cantidad
-                                    editProducto = record.producto
-                                    editRango = record.rango
-                                    editApellidosNombres = record.apellidosNombres
-                                    editCodigoUnidad = record.codigoUnidad.removePrefix("P-")
-                                    editTextoExtra = record.textoExtra
-                                    errorMessage = null
-                                    showFormSheet = true
-                                }
+                    // Rendimiento estándar por fecha seleccionada
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Registros del $displaySelectedDate (${filteredHistoryRecords.size})",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
                             )
+
+                            if (filteredHistoryRecords.isNotEmpty()) {
+                                OutlinedButton(
+                                    onClick = {
+                                        viewModel.copyRecordsToClipboard(
+                                            context = context,
+                                            records = filteredHistoryRecords,
+                                            labelDate = displaySelectedDate
+                                        )
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = null,
+                                        modifier = Modifier.padding(end = 6.dp)
+                                    )
+                                    Text("Copiar Registros")
+                                }
+                            }
+                        }
+                    }
+
+                    if (filteredHistoryRecords.isEmpty()) {
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                )
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(24.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = if (historySearchQuery.isNotBlank() || historyStatusFilter != null)
+                                            "No hay registros que coincidan con los filtros."
+                                        else
+                                            "No hay registros guardados para el $displaySelectedDate.\nToca el botón '+' para agregar uno.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        textAlign = TextAlign.Center,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        items(
+                            items = filteredHistoryRecords,
+                            key = { record -> record.id }
+                        ) { record ->
+                            Box(modifier = Modifier.animateItem()) {
+                                RecordItem(
+                                    record = record,
+                                    onDelete = { rec -> recordToDelete = rec },
+                                    onStatusClick = { rec ->
+                                        if (rec.getTaskStatus() == TaskStatus.COMPLETADO) {
+                                            recordToRevertStatus = rec
+                                        } else {
+                                            viewModel.cycleRecordStatus(rec)
+                                        }
+                                    },
+                                    onClick = {
+                                        recordToEdit = record
+                                        editCantidad = record.cantidad
+                                        editProducto = record.producto
+                                        editRango = record.rango
+                                        editApellidosNombres = record.apellidosNombres
+                                        editCodigoUnidad = record.codigoUnidad.removePrefix("P-")
+                                        editTextoExtra = record.textoExtra
+                                        errorMessage = null
+                                        showFormSheet = true
+                                    }
+                                )
+                            }
                         }
                     }
                 }

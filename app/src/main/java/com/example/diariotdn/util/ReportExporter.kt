@@ -49,6 +49,13 @@ import java.util.Locale
 
 object ReportExporter {
 
+    private fun isTimestampDeHoy(timestamp: Long): Boolean {
+        val hoy = java.util.Calendar.getInstance()
+        val fechaItem = java.util.Calendar.getInstance().apply { timeInMillis = timestamp }
+        return hoy.get(java.util.Calendar.YEAR) == fechaItem.get(java.util.Calendar.YEAR) &&
+                hoy.get(java.util.Calendar.DAY_OF_YEAR) == fechaItem.get(java.util.Calendar.DAY_OF_YEAR)
+    }
+
     @OptIn(ExperimentalLayoutApi::class)
     @Composable
     fun ReporteVisualContent(
@@ -66,7 +73,6 @@ object ReportExporter {
             if (rawCompletedRecords.isNotEmpty()) {
                 rawCompletedRecords
             } else {
-                val todayIsoDate = DateUtils.getTodayIsoDate()
                 val completedList = mutableListOf<DailyRecord>()
 
                 todayRecords.filter { it.getTaskStatus() == TaskStatus.COMPLETADO }.let {
@@ -75,7 +81,7 @@ object ReportExporter {
 
                 backlogRecords.filter { rec ->
                     rec.getTaskStatus() == TaskStatus.COMPLETADO &&
-                            DateUtils.millisToIsoDate(rec.timestamp) == todayIsoDate
+                            isTimestampDeHoy(rec.timestamp)
                 }.let {
                     completedList.addAll(it)
                 }
@@ -165,6 +171,80 @@ object ReportExporter {
 
             HorizontalDivider(color = Color(0xFFE0E0E0), thickness = 1.5.dp)
 
+            // 1. REUBICACIÓN: RESUMEN EJECUTIVO DE PRODUCCIÓN (Movido al inicio)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFFF5F5F5))
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "RESUMEN DE PRODUCCIÓN",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Gray
+                        )
+                        Text(
+                            text = "Completados hoy: $totalCompletedToday ítem(s) en total",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFF1A237E)
+                        )
+                    }
+
+                    Text(
+                        text = "Generado por Diario TDN",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.Gray,
+                        textAlign = TextAlign.End
+                    )
+                }
+
+                if (productionByProduct.isNotEmpty()) {
+                    HorizontalDivider(color = Color(0xFFE0E0E0), thickness = 1.dp)
+
+                    Text(
+                        text = "PRODUCCIÓN POR ARTÍCULO (COMPLETADOS HOY):",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Gray
+                    )
+
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        productionByProduct.forEach { (producto, total) ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFFE8EAF6))
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = "$producto: $total",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1A237E)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             // Sección 1: Producción del Día
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
@@ -193,7 +273,7 @@ object ReportExporter {
             // Sección 2: Trabajo Atrasado (Backlog)
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "⚠️ TRABAJO ATRASADO - BACKLOG ($totalBacklog)",
+                    text = "⚠️ TRABAJO ATRASADO ($totalBacklog)",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (totalBacklog > 0) Color(0xFFC62828) else Color(0xFF2E7D32)
@@ -213,83 +293,10 @@ object ReportExporter {
                     }
                 }
             }
-
-            HorizontalDivider(color = Color(0xFFE0E0E0), thickness = 1.5.dp)
-
-            // Pie de Página y Resumen de Métricas con Desglose por Artículo Unificado
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFFF5F5F5))
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "RESUMEN DE PRODUCCIÓN",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.Gray
-                        )
-                        Text(
-                            text = "Completados hoy: $totalCompletedToday ítem(s) en total",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1A237E)
-                        )
-                    }
-
-                    Text(
-                        text = "Generado por Diario TDN",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.Gray,
-                        textAlign = TextAlign.End
-                    )
-                }
-
-                if (productionByProduct.isNotEmpty()) {
-                    HorizontalDivider(color = Color(0xFFE0E0E0), thickness = 1.dp)
-
-                    Text(
-                        text = "DETALLE DE PRODUCCIÓN POR ARTÍCULO (COMPLETADOS HOY):",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Gray
-                    )
-
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        productionByProduct.forEach { (producto, total) ->
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Color(0xFFE8EAF6))
-                                    .padding(horizontal = 10.dp, vertical = 5.dp)
-                            ) {
-                                Text(
-                                    text = "$producto: $total",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF1A237E)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 
+    // 2. AUMENTAR TAMAÑO DE LETRA DE REGISTROS INDIVIDUALES (fontSize = 16.sp, fontWeight = Medium)
     @Composable
     private fun ReporteItemRow(record: DailyRecord) {
         val status = record.getTaskStatus()
@@ -304,20 +311,20 @@ object ReportExporter {
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(6.dp))
                 .border(1.dp, Color(0xFFEEEEEE), RoundedCornerShape(6.dp))
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp), // Padding vertical cómodo
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = status.emoji,
-                fontSize = 16.sp,
+                fontSize = 18.sp,
                 modifier = Modifier.padding(end = 12.dp)
             )
 
             Text(
                 text = record.getContentWithoutDate(),
-                fontSize = 14.sp,
+                fontSize = 16.sp, // Fuente de descripción agrandada (16.sp)
                 fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Medium, // FontWeight Medium
                 color = Color(0xFF212121),
                 modifier = Modifier.weight(1f)
             )
@@ -330,7 +337,7 @@ object ReportExporter {
                 modifier = Modifier
                     .clip(RoundedCornerShape(4.dp))
                     .background(statusColor.copy(alpha = 0.12f))
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
             )
         }
     }

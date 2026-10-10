@@ -71,9 +71,12 @@ class DailyRecordViewModel(
     // Fecha de hoy en formato ISO (YYYY-MM-DD)
     val todayIsoDate: String = DateUtils.getTodayIsoDate()
 
-    // 1. FUNCIÓN HELPER PRIVADA DE FECHA
+    // 1. FUNCIÓN HELPER PRIVADA DE FECHA (ZONA HORARIA LOCAL A PRUEBA DE BALAS)
     private fun isTimestampDeHoy(timestamp: Long): Boolean {
-        return DateUtils.millisToIsoDate(timestamp) == todayIsoDate
+        val hoy = java.util.Calendar.getInstance()
+        val fechaItem = java.util.Calendar.getInstance().apply { timeInMillis = timestamp }
+        return hoy.get(java.util.Calendar.YEAR) == fechaItem.get(java.util.Calendar.YEAR) &&
+                hoy.get(java.util.Calendar.DAY_OF_YEAR) == fechaItem.get(java.util.Calendar.DAY_OF_YEAR)
     }
 
     // Estados de Carga e Interacción Asíncrona (Loaders)
@@ -424,6 +427,52 @@ class DailyRecordViewModel(
     fun toggleHistoryMostrarLotes(show: Boolean) {
         _historyMostrarLotes.value = show
     }
+
+    // Modo Búsqueda Global en Toda la Base de Datos
+    private val _isGlobalSearch = MutableStateFlow(false)
+    val isGlobalSearch: StateFlow<Boolean> = _isGlobalSearch.asStateFlow()
+
+    fun toggleGlobalSearch(enabled: Boolean) {
+        _isGlobalSearch.value = enabled
+    }
+
+    val allRecordsGlobal: StateFlow<List<DailyRecord>> = dao.getAllRecordsFlow()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val groupedGlobalSearchResults: StateFlow<Map<String, List<DailyRecord>>> = combine(
+        allRecordsGlobal,
+        _historySearchQuery,
+        _historyStatusFilter,
+        _historyMostrarLotes,
+        _isGlobalSearch
+    ) { records, query, statusFilter, showLotes, isGlobal ->
+        if (!isGlobal || query.isBlank()) return@combine emptyMap()
+
+        val normalizedQuery = query.normalizeForSearch()
+        val filtered = records.filter { rec ->
+            val matchesLote = showLotes || rec.loteId == null
+            val matchesText = normalizedQuery.isEmpty() ||
+                    rec.apellidosNombres.normalizeForSearch().contains(normalizedQuery) ||
+                    rec.producto.normalizeForSearch().contains(normalizedQuery) ||
+                    rec.codigoUnidad.normalizeForSearch().contains(normalizedQuery) ||
+                    rec.rango.normalizeForSearch().contains(normalizedQuery) ||
+                    rec.textoExtra.normalizeForSearch().contains(normalizedQuery)
+
+            val matchesStatus = statusFilter == null || rec.getTaskStatus() == statusFilter
+
+            matchesLote && matchesText && matchesStatus
+        }
+
+        filtered.groupBy { DateUtils.isoToDisplayDate(it.date) }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyMap()
+    )
 
     // Lista de todas las fechas guardadas en la BD
     val allSavedDates: StateFlow<List<String>> = dao.getAllSavedDates()
