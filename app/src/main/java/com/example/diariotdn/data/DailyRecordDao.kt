@@ -34,6 +34,10 @@ interface DailyRecordDao {
     @Query("SELECT * FROM daily_records WHERE date < :todayIsoDate AND loteId IS NULL ORDER BY date DESC, timestamp ASC")
     fun getAllPastRecords(todayIsoDate: String): Flow<List<DailyRecord>>
 
+    // Consulta para módulo de Reportes: Registros completados dentro de un rango de fechas
+    @Query("SELECT * FROM daily_records WHERE date BETWEEN :fechaInicio AND :fechaFin AND estado = 'COMPLETADO' ORDER BY date ASC, timestamp ASC")
+    suspend fun obtenerRegistrosPorRango(fechaInicio: String, fechaFin: String): List<DailyRecord>
+
     // Consultas reactivas para el Dashboard (Solo registros individuales)
     @Query("SELECT COUNT(*) FROM daily_records WHERE date = :date AND loteId IS NULL")
     fun getTodayTotalCount(date: String): Flow<Int>

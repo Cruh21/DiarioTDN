@@ -54,4 +54,21 @@ object DateUtils {
         val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         return sdf.format(calendar.time)
     }
+
+    /**
+     * Retorna un Pair<String, String> con la fecha de inicio (Lunes) y fin (Domingo)
+     * de la semana actual en formato ISO "YYYY-MM-DD".
+     */
+    fun getCurrentWeekRangeIso(): Pair<String, String> {
+        val calendar = Calendar.getInstance()
+        calendar.firstDayOfWeek = Calendar.MONDAY
+        calendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val startIso = sdf.format(calendar.time)
+
+        calendar.add(Calendar.DAY_OF_WEEK, 6)
+        val endIso = sdf.format(calendar.time)
+
+        return Pair(startIso, endIso)
+    }
 }

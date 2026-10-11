@@ -88,9 +88,6 @@ fun MainScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val graphicsLayer = rememberGraphicsLayer()
-
     val todayIsoDate = viewModel.todayIsoDate
     val displayTodayDate = remember(todayIsoDate) { DateUtils.isoToDisplayDate(todayIsoDate) }
 
@@ -98,14 +95,11 @@ fun MainScreen(
     val pendingBacklogRecords by viewModel.pendingBacklogRecords.collectAsState()
     val pendingBacklogCount by viewModel.pendingBacklogCount.collectAsState()
     val mostrarBannerAtrasado by viewModel.mostrarBannerAtrasado.collectAsState()
-    val reportDisplayRecords by viewModel.reportDisplayRecords.collectAsState()
-    val todayCompletedProductionRecords by viewModel.todayCompletedProductionRecords.collectAsState()
     val todaySearchQuery by viewModel.todaySearchQuery.collectAsState()
     val todayStatusFilter by viewModel.todayStatusFilter.collectAsState()
     val mostrarLotes by viewModel.mostrarLotes.collectAsState()
 
     val isSavingRecord by viewModel.isSavingRecord.collectAsState()
-    val isGeneratingReport by viewModel.isGeneratingReport.collectAsState()
 
     val cantidad by viewModel.cantidad.collectAsState()
     val producto by viewModel.producto.collectAsState()
@@ -165,25 +159,6 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Nodo Oculto en el Árbol de Composición con Medición Desatada/Infinita (Unbounded)
-            Box(
-                modifier = Modifier
-                    .absoluteOffset(x = (-10000).dp)
-                    .wrapContentSize(unbounded = true)
-                    .drawWithContent {
-                        graphicsLayer.record {
-                            this@drawWithContent.drawContent()
-                        }
-                        drawContent()
-                    }
-            ) {
-                ReportExporter.ReporteVisualContent(
-                    todayRecords = reportDisplayRecords,
-                    backlogRecords = pendingBacklogRecords,
-                    rawCompletedRecords = todayCompletedProductionRecords,
-                    displayDate = displayTodayDate
-                )
-            }
 
             Column(
                 modifier = Modifier
@@ -429,55 +404,23 @@ fun MainScreen(
                             )
 
                             if (filteredTodayRecords.isNotEmpty() || pendingBacklogRecords.isNotEmpty()) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                OutlinedButton(
+                                    onClick = {
+                                        viewModel.copyDailyReportToClipboard(
+                                            context = context,
+                                            todayRecords = filteredTodayRecords,
+                                            backlogRecords = pendingBacklogRecords,
+                                            displayDate = displayTodayDate
+                                        )
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                                 ) {
-                                    OutlinedButton(
-                                        onClick = {
-                                            viewModel.copyDailyReportToClipboard(
-                                                context = context,
-                                                todayRecords = filteredTodayRecords,
-                                                backlogRecords = pendingBacklogRecords,
-                                                displayDate = displayTodayDate
-                                            )
-                                        },
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.ContentCopy,
-                                            contentDescription = null,
-                                            modifier = Modifier.padding(end = 4.dp)
-                                        )
-                                        Text("Copiar")
-                                    }
-
-                                    LoadingButton(
-                                        onClick = {
-                                            coroutineScope.launch {
-                                                try {
-                                                    val imageBitmap = graphicsLayer.toImageBitmap()
-                                                    val bitmap = imageBitmap.asAndroidBitmap()
-                                                    viewModel.shareCapturedReportBitmap(
-                                                        context = context,
-                                                        bitmap = bitmap,
-                                                        displayDate = displayTodayDate
-                                                    )
-                                                } catch (e: Exception) {
-                                                    e.printStackTrace()
-                                                    Toast.makeText(context, "Error al capturar reporte: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                        },
-                                        isLoading = isGeneratingReport
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Share,
-                                            contentDescription = null,
-                                            modifier = Modifier.padding(end = 4.dp)
-                                        )
-                                        // COMPARTIR
-                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = null,
+                                        modifier = Modifier.padding(end = 6.dp)
+                                    )
+                                    Text("Copiar Texto")
                                 }
                             }
                         }

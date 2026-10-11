@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.History
@@ -46,18 +47,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.diariotdn.R
+import com.example.diariotdn.data.AppDatabase
 import com.example.diariotdn.ui.screens.BackupScreen
 import com.example.diariotdn.ui.screens.ConfigCategoriesScreen
 import com.example.diariotdn.ui.screens.DashboardScreen
 import com.example.diariotdn.ui.screens.HistoryScreen
 import com.example.diariotdn.ui.screens.LotesScreen
 import com.example.diariotdn.ui.screens.MainScreen
+import com.example.diariotdn.ui.screens.ReportesScreen
 import com.example.diariotdn.ui.viewmodel.DailyRecordViewModel
+import com.example.diariotdn.ui.viewmodel.ReportesViewModel
+import com.example.diariotdn.ui.viewmodel.ReportesViewModelFactory
 import kotlinx.coroutines.launch
 
 enum class ScreenOption(val title: String) {
@@ -65,6 +72,7 @@ enum class ScreenOption(val title: String) {
     TODAY("Registro del Día"),
     HISTORY("Historial de Registros"),
     LOTES("Gestión de Lotes"),
+    REPORTES("Centro de Mando - Reportes"),
     BACKUP("Copia de Seguridad"),
     CONFIG("Configurar Categorías")
 }
@@ -77,6 +85,13 @@ fun AppNavigationDrawer(
     var currentScreen by remember { mutableStateOf(ScreenOption.DASHBOARD) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+
+    val context = LocalContext.current
+    val reportesViewModel: ReportesViewModel = viewModel(
+        factory = ReportesViewModelFactory(
+            dao = AppDatabase.getDatabase(context.applicationContext).dailyRecordDao()
+        )
+    )
 
     // Manejo de la tecla/gesto "Atrás": si el menú está abierto, se cierra. Si estamos en otra pantalla, vuelve a Dashboard.
     if (drawerState.isOpen) {
@@ -154,7 +169,7 @@ fun AppNavigationDrawer(
                                 contentDescription = null
                             )
                         },
-                        label = { Text("Dashboard") },
+                        label = { Text("Panel Principal") },
                         selected = currentScreen == ScreenOption.DASHBOARD,
                         onClick = {
                             scope.launch { drawerState.close() }
@@ -172,7 +187,7 @@ fun AppNavigationDrawer(
                                 contentDescription = null
                             )
                         },
-                        label = { Text("Dia") },
+                        label = { Text("Registro del Día") },
                         selected = currentScreen == ScreenOption.TODAY,
                         onClick = {
                             scope.launch { drawerState.close() }
@@ -190,7 +205,7 @@ fun AppNavigationDrawer(
                                 contentDescription = null
                             )
                         },
-                        label = { Text("Historial") },
+                        label = { Text("Historial de Registros") },
                         selected = currentScreen == ScreenOption.HISTORY,
                         onClick = {
                             scope.launch { drawerState.close() }
@@ -208,11 +223,29 @@ fun AppNavigationDrawer(
                                 contentDescription = null
                             )
                         },
-                        label = { Text("Lotes") },
+                        label = { Text("Gestión de Lotes") },
                         selected = currentScreen == ScreenOption.LOTES,
                         onClick = {
                             scope.launch { drawerState.close() }
                             currentScreen = ScreenOption.LOTES
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    NavigationDrawerItem(
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Default.Assessment,
+                                contentDescription = null
+                            )
+                        },
+                        label = { Text("Centro de Mando - Reportes") },
+                        selected = currentScreen == ScreenOption.REPORTES,
+                        onClick = {
+                            scope.launch { drawerState.close() }
+                            currentScreen = ScreenOption.REPORTES
                         },
                         modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                     )
@@ -258,7 +291,7 @@ fun AppNavigationDrawer(
                                 contentDescription = null
                             )
                         },
-                        label = { Text("Categorías") },
+                        label = { Text("Configurar Categorías") },
                         selected = currentScreen == ScreenOption.CONFIG,
                         onClick = {
                             scope.launch { drawerState.close() }
@@ -315,6 +348,10 @@ fun AppNavigationDrawer(
                     ScreenOption.TODAY -> MainScreen(viewModel = viewModel)
                     ScreenOption.HISTORY -> HistoryScreen(viewModel = viewModel)
                     ScreenOption.LOTES -> LotesScreen(viewModel = viewModel)
+                    ScreenOption.REPORTES -> ReportesScreen(
+                        dailyViewModel = viewModel,
+                        reportesViewModel = reportesViewModel
+                    )
                     ScreenOption.BACKUP -> BackupScreen(viewModel = viewModel)
                     ScreenOption.CONFIG -> ConfigCategoriesScreen(viewModel = viewModel)
                 }
