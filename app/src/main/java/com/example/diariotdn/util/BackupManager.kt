@@ -66,6 +66,54 @@ class BackupManager(
         }
     }
 
+    suspend fun exportAllDataDirectToDocuments(): Result<Pair<Int, Uri>> = withContext(Dispatchers.IO) {
+        try {
+            val lotes = database.loteDao().getAllLotesDirect()
+            val records = database.dailyRecordDao().getAllRecordsDirect()
+            val options = database.categoryOptionDao().getAllCategoryOptionsDirect()
+
+            val backup = BackupData(
+                version = 1,
+                exportDate = DateUtils.getTodayIsoDate(),
+                lotes = lotes,
+                dailyRecords = records,
+                categoryOptions = options
+            )
+
+            val jsonString = gson.toJson(backup)
+            val uri = FileManager.guardarBackupJson(context, jsonString, isFullBackup = true)
+                ?: return@withContext Result.failure(Exception("No se pudo guardar el backup en Documents/Diario TDN/Backups"))
+
+            Result.success(Pair(records.size + lotes.size, uri))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun exportDateDataDirectToDocuments(targetIsoDate: String): Result<Pair<Int, Uri>> = withContext(Dispatchers.IO) {
+        try {
+            val records = database.dailyRecordDao().getRecordsByDateDirect(targetIsoDate)
+            val loteIds = records.mapNotNull { it.loteId }.distinct()
+            val lotes = database.loteDao().getAllLotesDirect().filter { it.id in loteIds }
+
+            val backup = BackupData(
+                version = 1,
+                exportDate = targetIsoDate,
+                lotes = lotes,
+                dailyRecords = records,
+                categoryOptions = emptyList()
+            )
+
+            val jsonString = gson.toJson(backup)
+            val uri = FileManager.guardarBackupJson(context, jsonString, isFullBackup = false, isoDate = targetIsoDate)
+                ?: return@withContext Result.failure(Exception("No se pudo guardar el backup en Documents/Diario TDN/Backups"))
+
+            Result.success(Pair(records.size, uri))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun importData(uri: Uri): Result<String> = withContext(Dispatchers.IO) {
         try {
             val jsonString = context.contentResolver.openInputStream(uri)?.use { inputStream ->

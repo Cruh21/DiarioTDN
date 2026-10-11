@@ -207,12 +207,33 @@ fun BackupScreen(
 
                         Button(
                             onClick = {
-                                val fileName = "DiarioTDN_Backup_Completo_${DateUtils.getTodayIsoDate()}.json"
-                                exportAllLauncher.launch(fileName)
+                                viewModel.exportAllDataDirect(context) { result ->
+                                    result.fold(
+                                        onSuccess = { (count, uri) ->
+                                            Toast.makeText(
+                                                context,
+                                                "Backup guardado en Documents/Diario TDN/Backups/ ($count elementos).",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                            com.example.diariotdn.util.FileManager.abrirOCompartirImagen(
+                                                context,
+                                                uri,
+                                                "Copia de Seguridad Completa"
+                                            )
+                                        },
+                                        onFailure = { error ->
+                                            Toast.makeText(
+                                                context,
+                                                "Error al exportar: ${error.localizedMessage}",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    )
+                                }
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Exportar Todo el Sistema (.json)")
+                            Text("Guardar Backup Completo en Documents/Diario TDN/Backups")
                         }
 
                         Spacer(modifier = Modifier.height(4.dp))
@@ -241,11 +262,32 @@ fun BackupScreen(
 
                             Button(
                                 onClick = {
-                                    val fileName = "DiarioTDN_Backup_${selectedExportDate}.json"
-                                    exportDateLauncher.launch(fileName)
+                                    viewModel.exportDateDataDirect(context, selectedExportDate) { result ->
+                                        result.fold(
+                                            onSuccess = { (count, uri) ->
+                                                Toast.makeText(
+                                                    context,
+                                                    "Backup de fecha guardado en Documents/Diario TDN/Backups/ ($count registros).",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                                com.example.diariotdn.util.FileManager.abrirOCompartirImagen(
+                                                    context,
+                                                    uri,
+                                                    "Copia de Seguridad $selectedExportDate"
+                                                )
+                                            },
+                                            onFailure = { error ->
+                                                Toast.makeText(
+                                                    context,
+                                                    "Error al exportar: ${error.localizedMessage}",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            }
+                                        )
+                                    }
                                 }
                             ) {
-                                Text("Exportar Fecha")
+                                Text("Guardar Backup Fecha")
                             }
                         }
                     }

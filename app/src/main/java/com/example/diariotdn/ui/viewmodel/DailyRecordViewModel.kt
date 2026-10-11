@@ -33,6 +33,9 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class DailyRecordViewModel(
     private val database: AppDatabase,
@@ -71,12 +74,23 @@ class DailyRecordViewModel(
     // Fecha de hoy en formato ISO (YYYY-MM-DD)
     val todayIsoDate: String = DateUtils.getTodayIsoDate()
 
-    // 1. FUNCIÓN HELPER PRIVADA DE FECHA (ZONA HORARIA LOCAL A PRUEBA DE BALAS)
+    // 1. FUNCIONES HELPER PRIVADAS DE FECHA Y TIMESTAMP
+    private fun formatearTimestamp(timestamp: Long): String {
+        val sdf = SimpleDateFormat("dd/MM/yy", Locale.getDefault())
+        return sdf.format(Date(timestamp))
+    }
+
+    private fun timestampToIsoDate(timestamp: Long): String {
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        return sdf.format(Date(timestamp))
+    }
+
+    private fun isTimestampDeFecha(timestamp: Long, targetIsoDate: String): Boolean {
+        return timestampToIsoDate(timestamp) == targetIsoDate
+    }
+
     private fun isTimestampDeHoy(timestamp: Long): Boolean {
-        val hoy = java.util.Calendar.getInstance()
-        val fechaItem = java.util.Calendar.getInstance().apply { timeInMillis = timestamp }
-        return hoy.get(java.util.Calendar.YEAR) == fechaItem.get(java.util.Calendar.YEAR) &&
-                hoy.get(java.util.Calendar.DAY_OF_YEAR) == fechaItem.get(java.util.Calendar.DAY_OF_YEAR)
+        return isTimestampDeFecha(timestamp, todayIsoDate)
     }
 
     // Estados de Carga e Interacción Asíncrona (Loaders)
@@ -95,12 +109,22 @@ class DailyRecordViewModel(
     private val _isImportingDraft = MutableStateFlow(false)
     val isImportingDraft: StateFlow<Boolean> = _isImportingDraft.asStateFlow()
 
-    // Fecha seleccionada en la pantalla de historial
-    private val _selectedHistoryDate = MutableStateFlow(DateUtils.getYesterdayIsoDate())
+    // Fecha seleccionada en la pantalla de historial o reportes diarios
+    private val _selectedHistoryDate = MutableStateFlow(DateUtils.getTodayIsoDate())
     val selectedHistoryDate: StateFlow<String> = _selectedHistoryDate.asStateFlow()
 
     // Registros del día de hoy (Individuales)
     val todayRecords: StateFlow<List<DailyRecord>> = dao.getRecordsByDate(todayIsoDate)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    // Registros creados hasta la fecha seleccionada
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val recordsUpToSelectedDate: StateFlow<List<DailyRecord>> = _selectedHistoryDate
+        .flatMapLatest { date -> dao.getRecordsUpToDate(date) }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -126,14 +150,23 @@ class DailyRecordViewModel(
         initialValue = 0
     )
 
-    // 2. CÁLCULO ESTRICTO DE BACKLOG VISIBLE HOY
-    val backlogVisibleHoy: StateFlow<List<DailyRecord>> = dao.getAllPastRecords(todayIsoDate)
-        .map { list ->
-            list.filter { rec ->
-                val status = rec.getTaskStatus()
-                status == TaskStatus.PENDIENTE ||
-                        status == TaskStatus.EN_PROCESO ||
-                        (status == TaskStatus.COMPLETADO && isTimestampDeHoy(rec.timestamp))
+    // 2. CÁLCULO ESTRICTO DE BACKLOG VISIBLE PARA LA FECHA SELECCIONADA
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val backlogVisibleHoy: StateFlow<List<DailyRecord>> = _selectedHistoryDate
+        .flatMapLatest { targetDate ->
+            dao.getRecordsUpToDate(targetDate).map { recordsUpToTarget ->
+                // Registros creados estrictamente en días anteriores a targetDate
+                val registrosViejos = recordsUpToTarget.filter { it.date < targetDate && it.loteId == null }
+                registrosViejos.filter { item ->
+                    val status = item.getTaskStatus()
+                    if (status == TaskStatus.COMPLETADO) {
+                        // Si está completado, SOLO se muestra si se completó en la fecha que estamos consultando
+                        isTimestampDeFecha(item.timestamp, targetDate)
+                    } else {
+                        // Si está pendiente o en proceso, se muestra como atrasado
+                        status == TaskStatus.PENDIENTE || status == TaskStatus.EN_PROCESO
+                    }
+                }
             }
         }
         .stateIn(
@@ -163,60 +196,60 @@ class DailyRecordViewModel(
             initialValue = 0
         )
 
-    // 3. UNIFICACIÓN DE PRODUCCIÓN TOTAL HOY (Resumen Ejecutivo)
+    // 3. PRODUCCIÓN TOTAL COMPLETADA PARA LA FECHA SELECCIONADA (Resumen Ejecutivo)
+    @OptIn(ExperimentalCoroutinesApi::class)
     val todayCompletedProductionRecords: StateFlow<List<DailyRecord>> = combine(
-        todayRecords,
+        _selectedHistoryDate,
+        recordsUpToSelectedDate,
         backlogVisibleHoy,
         allLotesWithRecords
-    ) { todayRecs, backlogList, lotesList ->
-        val completedTodayList = mutableListOf<DailyRecord>()
+    ) { targetDate, recordsUpToDateList, backlogList, lotesList ->
+        val completedList = mutableListOf<DailyRecord>()
 
-        // A) Registros creados hoy completados
-        todayRecs.filter { it.getTaskStatus() == TaskStatus.COMPLETADO }.let {
-            completedTodayList.addAll(it)
+        // A) Registros creados hoy (o en targetDate) completados
+        val registrosDelDia = recordsUpToDateList.filter { it.date == targetDate && it.getTaskStatus() == TaskStatus.COMPLETADO }
+        completedList.addAll(registrosDelDia)
+
+        // B) Registros de Backlog completados en targetDate
+        val backlogCompletadoTarget = backlogList.filter { rec ->
+            rec.getTaskStatus() == TaskStatus.COMPLETADO && isTimestampDeFecha(rec.timestamp, targetDate)
         }
+        completedList.addAll(backlogCompletadoTarget)
 
-        // B) Registros de Backlog completados HOY
-        backlogList.filter { rec ->
-            rec.getTaskStatus() == TaskStatus.COMPLETADO && isTimestampDeHoy(rec.timestamp)
-        }.let {
-            completedTodayList.addAll(it)
-        }
-
-        // C) Ítems de Lotes completados HOY
-        lotesList.flatMap { it.records }.filter { rec ->
+        // C) Ítems de Lotes completados en targetDate
+        val batchCompletedOnTarget = lotesList.flatMap { it.records }.filter { rec ->
             rec.getTaskStatus() == TaskStatus.COMPLETADO &&
-                    (rec.date == todayIsoDate || isTimestampDeHoy(rec.timestamp))
-        }.let { batchCompleted ->
-            val existingIds = completedTodayList.map { it.id }.toSet()
-            batchCompleted.forEach { bRec ->
-                if (bRec.id !in existingIds) {
-                    completedTodayList.add(bRec)
-                }
+                    (rec.date == targetDate || isTimestampDeFecha(rec.timestamp, targetDate))
+        }
+        val existingIds = completedList.map { it.id }.toSet()
+        batchCompletedOnTarget.forEach { bRec ->
+            if (bRec.id !in existingIds) {
+                completedList.add(bRec)
             }
         }
 
-        completedTodayList
+        completedList
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
 
-    // LISTA VISUAL REPORTE: Registros individuales de hoy + Resumen agrupado de Lotes completados hoy
+    // LISTA VISUAL REPORTE: Registros individuales del día + Resumen agrupado de Lotes completados ese día
     val reportDisplayRecords: StateFlow<List<DailyRecord>> = combine(
-        todayRecords,
+        _selectedHistoryDate,
+        recordsUpToSelectedDate,
         todayCompletedProductionRecords,
         allLotesWithRecords
-    ) { todayRecs, completedProductionList, lotesList ->
+    ) { targetDate, recordsUpToDateList, completedProductionList, lotesList ->
         val reportList = mutableListOf<DailyRecord>()
 
         // 1. Registros individuales del día (sin lote)
-        reportList.addAll(todayRecs.filter { it.loteId == null })
+        reportList.addAll(recordsUpToDateList.filter { it.date == targetDate && it.loteId == null })
 
-        // 2. Agrupación de Ítems de Lotes completados HOY por loteId
-        val batchCompletedToday = completedProductionList.filter { it.loteId != null }
-        val groupedByLote = batchCompletedToday.groupBy { it.loteId }
+        // 2. Agrupación de Ítems de Lotes completados en la fecha por loteId
+        val batchCompletedOnDate = completedProductionList.filter { it.loteId != null }
+        val groupedByLote = batchCompletedOnDate.groupBy { it.loteId }
         val loteMap = lotesList.associateBy { it.lote.id }
 
         groupedByLote.forEach { (loteId, group) ->
@@ -225,10 +258,9 @@ class DailyRecordViewModel(
                 val loteName = loteWithRecords?.lote?.nombreLote ?: "Lote #$loteId"
                 val firstItem = group.first()
                 val count = group.size
-                val displayDate = DateUtils.isoToDisplayDate(todayIsoDate)
+                val displayDate = DateUtils.isoToDisplayDate(targetDate)
                 val summaryText = "$count ${firstItem.producto} del lote $loteName"
 
-                // Verificación dinámica del estado real del Lote
                 val isBatchFullyCompleted = loteWithRecords != null &&
                         loteWithRecords.totalCount > 0 &&
                         loteWithRecords.completedCount == loteWithRecords.totalCount
@@ -241,7 +273,7 @@ class DailyRecordViewModel(
 
                 val virtualRecord = DailyRecord(
                     id = -loteId,
-                    date = todayIsoDate,
+                    date = targetDate,
                     formattedDate = displayDate,
                     cantidad = count.toString(),
                     producto = firstItem.producto,
@@ -1037,13 +1069,50 @@ class DailyRecordViewModel(
      */
     fun shareCapturedReportBitmap(
         context: Context,
-        bitmap: android.graphics.Bitmap,
+        bitmap: android.graphics.Bitmap?,
         displayDate: String
     ) {
+        if (bitmap == null) return
         viewModelScope.launch {
             _isGeneratingReport.value = true
             try {
                 com.example.diariotdn.util.ReportExporter.shareCapturedReportBitmap(context, bitmap, displayDate)
+            } finally {
+                _isGeneratingReport.value = false
+            }
+        }
+    }
+
+    /**
+     * Guarda físicamente el reporte en Documents/Diario TDN/ y abre el selector de compartir/abrir
+     */
+    fun saveAndShareReportImage(
+        context: Context,
+        bitmap: android.graphics.Bitmap?,
+        tipo: com.example.diariotdn.util.TipoReporte,
+        fileName: String,
+        titleAction: String,
+        textoPersonalizado: String? = null
+    ) {
+        if (bitmap == null) {
+            Toast.makeText(context, "Error: La imagen del reporte no se pudo generar.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        viewModelScope.launch {
+            _isGeneratingReport.value = true
+            try {
+                val contentUri = com.example.diariotdn.util.FileManager.guardarImagen(
+                    context = context,
+                    bitmap = bitmap,
+                    tipo = tipo,
+                    nombreArchivo = fileName
+                )
+
+                if (contentUri != null) {
+                    Toast.makeText(context, "Reporte guardado en Documents/Diario TDN/${tipo.folderName}", Toast.LENGTH_LONG).show()
+                    com.example.diariotdn.util.FileManager.compartirArchivo(context, contentUri, titleAction, textoPersonalizado)
+                }
             } finally {
                 _isGeneratingReport.value = false
             }
@@ -1098,6 +1167,32 @@ class DailyRecordViewModel(
             try {
                 val backupManager = BackupManager(context, database)
                 val result = backupManager.exportDateData(uri, isoDate)
+                onResult(result)
+            } finally {
+                _isExporting.value = false
+            }
+        }
+    }
+
+    fun exportAllDataDirect(context: Context, onResult: (Result<Pair<Int, Uri>>) -> Unit) {
+        viewModelScope.launch {
+            _isExporting.value = true
+            try {
+                val backupManager = BackupManager(context, database)
+                val result = backupManager.exportAllDataDirectToDocuments()
+                onResult(result)
+            } finally {
+                _isExporting.value = false
+            }
+        }
+    }
+
+    fun exportDateDataDirect(context: Context, isoDate: String, onResult: (Result<Pair<Int, Uri>>) -> Unit) {
+        viewModelScope.launch {
+            _isExporting.value = true
+            try {
+                val backupManager = BackupManager(context, database)
+                val result = backupManager.exportDateDataDirectToDocuments(isoDate)
                 onResult(result)
             } finally {
                 _isExporting.value = false

@@ -49,11 +49,20 @@ import java.util.Locale
 
 object ReportExporter {
 
-    private fun isTimestampDeHoy(timestamp: Long): Boolean {
-        val hoy = java.util.Calendar.getInstance()
-        val fechaItem = java.util.Calendar.getInstance().apply { timeInMillis = timestamp }
-        return hoy.get(java.util.Calendar.YEAR) == fechaItem.get(java.util.Calendar.YEAR) &&
-                hoy.get(java.util.Calendar.DAY_OF_YEAR) == fechaItem.get(java.util.Calendar.DAY_OF_YEAR)
+    private fun formatearTimestamp(timestamp: Long): String {
+        val sdf = SimpleDateFormat("dd/MM/yy", Locale.getDefault())
+        return sdf.format(Date(timestamp))
+    }
+
+    private fun timestampToIsoDate(timestamp: Long): String {
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        return sdf.format(Date(timestamp))
+    }
+
+    private fun isTimestampDeFecha(timestamp: Long, targetDisplayOrIsoDate: String): Boolean {
+        val timestampDisplay = formatearTimestamp(timestamp)
+        val timestampIso = timestampToIsoDate(timestamp)
+        return timestampDisplay == targetDisplayOrIsoDate || timestampIso == targetDisplayOrIsoDate
     }
 
     @OptIn(ExperimentalLayoutApi::class)
@@ -68,8 +77,8 @@ object ReportExporter {
         val totalBacklog = backlogRecords.size
         val generationTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
 
-        // 1. Unificación en memoria de la producción completada HOY (Cruda)
-        val effectiveCompletedRecords = remember(todayRecords, backlogRecords, rawCompletedRecords) {
+        // 1. Unificación en memoria de la producción completada en la fecha especificada
+        val effectiveCompletedRecords = remember(todayRecords, backlogRecords, rawCompletedRecords, displayDate) {
             if (rawCompletedRecords.isNotEmpty()) {
                 rawCompletedRecords
             } else {
@@ -81,7 +90,7 @@ object ReportExporter {
 
                 backlogRecords.filter { rec ->
                     rec.getTaskStatus() == TaskStatus.COMPLETADO &&
-                            isTimestampDeHoy(rec.timestamp)
+                            isTimestampDeFecha(rec.timestamp, displayDate)
                 }.let {
                     completedList.addAll(it)
                 }

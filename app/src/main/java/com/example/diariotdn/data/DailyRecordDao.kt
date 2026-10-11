@@ -18,6 +18,10 @@ interface DailyRecordDao {
     @Query("SELECT * FROM daily_records WHERE date = :date ORDER BY timestamp ASC")
     suspend fun getRecordsByDateDirect(date: String): List<DailyRecord>
 
+    // Consulta amplia de registros hasta una fecha para reportes históricos e integración de Backlog
+    @Query("SELECT * FROM daily_records WHERE date <= :selectedDate ORDER BY date DESC, timestamp ASC")
+    fun getRecordsUpToDate(selectedDate: String): Flow<List<DailyRecord>>
+
     @Query("SELECT * FROM daily_records ORDER BY date DESC, timestamp ASC")
     fun getAllRecordsFlow(): Flow<List<DailyRecord>>
 
