@@ -72,7 +72,7 @@ enum class ScreenOption(val title: String) {
     TODAY("Registro del Día"),
     HISTORY("Historial de Registros"),
     LOTES("Gestión de Lotes"),
-    REPORTES("Centro de Mando - Reportes"),
+    REPORTES("Reportes"),
     BACKUP("Copia de Seguridad"),
     CONFIG("Configurar Categorías")
 }
@@ -241,7 +241,7 @@ fun AppNavigationDrawer(
                                 contentDescription = null
                             )
                         },
-                        label = { Text("Centro de Mando - Reportes") },
+                        label = { Text("Reportes") },
                         selected = currentScreen == ScreenOption.REPORTES,
                         onClick = {
                             scope.launch { drawerState.close() }

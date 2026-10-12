@@ -20,7 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddTask
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Inventory
@@ -47,7 +46,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.diariotdn.ui.viewmodel.DailyRecordViewModel
-import com.example.diariotdn.util.DateUtils
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -57,8 +58,13 @@ fun DashboardScreen(
     onNavigateToLotes: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val todayIsoDate = viewModel.todayIsoDate
-    val displayDate = remember(todayIsoDate) { DateUtils.isoToDisplayDate(todayIsoDate) }
+    // 1. DÍA Y FECHA FORMATEADOS: "[Día de la semana] [dd/mm]" (Ej. "Domingo 11/10")
+    val localeEs = remember { Locale("es", "ES") }
+    val diaYFecha = remember {
+        SimpleDateFormat("EEEE dd/MM", localeEs)
+            .format(Date())
+            .replaceFirstChar { if (it.isLowerCase()) it.titlecase(localeEs) else it.toString() }
+    }
 
     val isAppLoading by viewModel.isAppLoading.collectAsState()
     val todayCompletedCount by viewModel.todayCompletedCount.collectAsState()
@@ -93,7 +99,7 @@ fun DashboardScreen(
                 contentPadding = PaddingValues(top = 12.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Banner de Bienvenida y Fecha
+                // Banner de Bienvenida y Fecha Actualizada
                 item {
                     ElevatedCard(
                         modifier = Modifier.fillMaxWidth(),
@@ -117,13 +123,13 @@ fun DashboardScreen(
                             )
                             Column {
                                 Text(
-                                    text = "Panel de Control",
+                                    text = diaYFecha, // Ej: "Domingo 11/10"
                                     style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Resumen de Producción - $displayDate",
+                                    text = "Resumen de producción", // Subtítulo Fijo
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -361,7 +367,7 @@ fun DashboardScreen(
                     }
                 }
 
-                // Sección Inferior: Accesos Rápidos
+                // 2. ACCESOS RÁPIDOS EN FILA ÚNICA HORIZONTAL
                 item {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
@@ -373,39 +379,38 @@ fun DashboardScreen(
                 }
 
                 item {
-                    Column(
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Button(
                             onClick = onNavigateToToday,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp),
+                                .weight(1f)
+                                .height(48.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.primary
                             )
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                horizontalArrangement = Arrangement.Center,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Today,
-                                        contentDescription = null,
-                                        modifier = Modifier.padding(end = 12.dp)
-                                    )
-                                    Text(
-                                        text = "Ir a Registro Rápido",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
                                 Icon(
-                                    imageVector = Icons.Default.ChevronRight,
-                                    contentDescription = null
+                                    imageVector = Icons.Default.Today,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(18.dp)
+                                        .padding(end = 6.dp)
+                                )
+                                Text(
+                                    text = "Registro Rápido",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
                                 )
                             }
                         }
@@ -413,29 +418,27 @@ fun DashboardScreen(
                         OutlinedButton(
                             onClick = onNavigateToLotes,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp)
+                                .weight(1f)
+                                .height(48.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                horizontalArrangement = Arrangement.Center,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.AddTask,
-                                        contentDescription = null,
-                                        modifier = Modifier.padding(end = 12.dp)
-                                    )
-                                    Text(
-                                        text = "Ver Lotes de Producción",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
                                 Icon(
-                                    imageVector = Icons.Default.ChevronRight,
-                                    contentDescription = null
+                                    imageVector = Icons.Default.AddTask,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(18.dp)
+                                        .padding(end = 6.dp)
+                                )
+                                Text(
+                                    text = "Lotes Producción",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
                                 )
                             }
                         }

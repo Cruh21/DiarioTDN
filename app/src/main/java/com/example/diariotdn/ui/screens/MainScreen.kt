@@ -173,6 +173,7 @@ fun MainScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     // Header del día actual
+                    /*
                     item {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -208,7 +209,7 @@ fun MainScreen(
                             }
                         }
                     }
-
+*/
                     // Alerta Animada de Trabajo Atrasado (Backlog)
                     item {
                         AnimatedVisibility(

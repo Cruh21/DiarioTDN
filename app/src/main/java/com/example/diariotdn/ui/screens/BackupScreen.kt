@@ -3,6 +3,7 @@ package com.example.diariotdn.ui.screens
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,11 +15,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -26,12 +31,14 @@ import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,7 +51,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.diariotdn.ui.components.FullScreenLoader
 import com.example.diariotdn.ui.viewmodel.DailyRecordViewModel
+import com.example.diariotdn.util.ArchivoReporte
 import com.example.diariotdn.util.DateUtils
+import com.example.diariotdn.util.FileManager
+import com.example.diariotdn.util.TipoReporte
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,7 +73,26 @@ fun BackupScreen(
     var selectedExportDate by remember { mutableStateOf(DateUtils.getTodayIsoDate()) }
     var showDatePicker by remember { mutableStateOf(false) }
 
-    // Launcher para Exportar TODOS los Datos
+    // Estados para la Lista de Copias de Seguridad Guardadas en Disco
+    var savedBackupsList by remember { mutableStateOf<List<ArchivoReporte>>(emptyList()) }
+    var backupABorrar by remember { mutableStateOf<ArchivoReporte?>(null) }
+    var backupAImportar by remember { mutableStateOf<ArchivoReporte?>(null) }
+
+    fun refreshSavedBackups() {
+        savedBackupsList = FileManager.obtenerReportesGuardados(context, TipoReporte.BACKUP)
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        refreshSavedBackups()
+    }
+
+    LaunchedEffect(Unit) {
+        refreshSavedBackups()
+    }
+
+    // Launcher para Exportar TODO por SAF (Opcional)
     val exportAllLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
@@ -73,6 +105,7 @@ fun BackupScreen(
                             "Copia de seguridad exportada con éxito ($count elementos).",
                             Toast.LENGTH_LONG
                         ).show()
+                        refreshSavedBackups()
                     },
                     onFailure = { error ->
                         Toast.makeText(
@@ -86,7 +119,7 @@ fun BackupScreen(
         }
     }
 
-    // Launcher para Exportar Registros de una Fecha
+    // Launcher para Exportar Fecha por SAF (Opcional)
     val exportDateLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
@@ -99,6 +132,7 @@ fun BackupScreen(
                             "Se exportaron $count registros del $selectedExportDate.",
                             Toast.LENGTH_LONG
                         ).show()
+                        refreshSavedBackups()
                     },
                     onFailure = { error ->
                         Toast.makeText(
@@ -143,6 +177,7 @@ fun BackupScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Banner Informativo
+            /*
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -178,7 +213,7 @@ fun BackupScreen(
                     }
                 }
             }
-
+*/
             // Sección 1: Exportar
             item {
                 Card(
@@ -209,17 +244,13 @@ fun BackupScreen(
                             onClick = {
                                 viewModel.exportAllDataDirect(context) { result ->
                                     result.fold(
-                                        onSuccess = { (count, uri) ->
+                                        onSuccess = { (count, _) ->
                                             Toast.makeText(
                                                 context,
-                                                "Backup guardado en Documents/Diario TDN/Backups/ ($count elementos).",
+                                                "Copia de seguridad guardada en Documents/Diario TDN/Backups/ ($count elementos).",
                                                 Toast.LENGTH_LONG
                                             ).show()
-                                            com.example.diariotdn.util.FileManager.abrirOCompartirImagen(
-                                                context,
-                                                uri,
-                                                "Copia de Seguridad Completa"
-                                            )
+                                            refreshSavedBackups()
                                         },
                                         onFailure = { error ->
                                             Toast.makeText(
@@ -233,7 +264,7 @@ fun BackupScreen(
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Guardar Backup Completo en Documents/Diario TDN/Backups")
+                            Text("Guardar Copia de seguridad")
                         }
 
                         Spacer(modifier = Modifier.height(4.dp))
@@ -264,17 +295,13 @@ fun BackupScreen(
                                 onClick = {
                                     viewModel.exportDateDataDirect(context, selectedExportDate) { result ->
                                         result.fold(
-                                            onSuccess = { (count, uri) ->
+                                            onSuccess = { (count, _) ->
                                                 Toast.makeText(
                                                     context,
                                                     "Backup de fecha guardado en Documents/Diario TDN/Backups/ ($count registros).",
                                                     Toast.LENGTH_LONG
                                                 ).show()
-                                                com.example.diariotdn.util.FileManager.abrirOCompartirImagen(
-                                                    context,
-                                                    uri,
-                                                    "Copia de Seguridad $selectedExportDate"
-                                                )
+                                                refreshSavedBackups()
                                             },
                                             onFailure = { error ->
                                                 Toast.makeText(
@@ -337,6 +364,126 @@ fun BackupScreen(
                     }
                 }
             }
+
+            // Sección 3: UI de la Lista de Backups Guardados en Disco
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "📁 Copias de Seguridad Guardadas (${savedBackupsList.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    IconButton(onClick = {
+                        val permisos = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                            arrayOf(android.Manifest.permission.READ_MEDIA_IMAGES)
+                        } else {
+                            arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                        }
+                        permissionLauncher.launch(permisos)
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Recargar lista de backups",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+
+            if (savedBackupsList.isEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .animateContentSize(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        )
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No hay copias de seguridad guardadas en Documents/Diario TDN/Backups.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            } else {
+                items(
+                    items = savedBackupsList,
+                    key = { item -> item.id }
+                ) { archivo ->
+                    Box(modifier = Modifier.animateItem()) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = archivo.nombre,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    val formattedDate = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+                                        .format(Date(archivo.fechaModificacion))
+                                    Text(
+                                        text = "Guardado: $formattedDate",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = {
+                                            backupAImportar = archivo
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CloudDownload,
+                                            contentDescription = "Restaurar esta copia",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = {
+                                            backupABorrar = archivo
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Eliminar backup",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Loader de Pantalla Completa durante Exportación / Importación
@@ -373,5 +520,96 @@ fun BackupScreen(
         ) {
             DatePicker(state = datePickerState)
         }
+    }
+
+    // Diálogo de Confirmación para Eliminar Backup
+    backupABorrar?.let { archivo ->
+        AlertDialog(
+            onDismissRequest = { backupABorrar = null },
+            title = {
+                Text(
+                    text = "Eliminar Copia de Seguridad",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text("¿Estás seguro de que deseas eliminar '${archivo.nombre}'? Esta acción no se puede deshacer.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val deleted = FileManager.eliminarReporte(context, archivo.uri)
+                        if (deleted) {
+                            Toast.makeText(context, "Copia de seguridad eliminada", Toast.LENGTH_SHORT).show()
+                            refreshSavedBackups()
+                        } else {
+                            Toast.makeText(context, "No se pudo eliminar el archivo", Toast.LENGTH_SHORT).show()
+                        }
+                        backupABorrar = null
+                    }
+                ) {
+                    Text(
+                        text = "Eliminar",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { backupABorrar = null }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    // Diálogo de Confirmación para Restaurar/Importar Backup
+    backupAImportar?.let { archivo ->
+        AlertDialog(
+            onDismissRequest = { backupAImportar = null },
+            title = {
+                Text(
+                    text = "Restaurar Copia de Seguridad",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text("¿Estás seguro de que deseas restaurar los datos desde '${archivo.nombre}'? Esta acción reemplazará todos los registros actuales y no se puede deshacer.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.importData(context, archivo.uri) { result ->
+                            result.fold(
+                                onSuccess = { message ->
+                                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                                },
+                                onFailure = { error ->
+                                    Toast.makeText(
+                                        context,
+                                        "Error al restaurar: ${error.localizedMessage}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            )
+                        }
+                        backupAImportar = null
+                    }
+                ) {
+                    Text(
+                        text = "Restaurar",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { backupAImportar = null }) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 }
