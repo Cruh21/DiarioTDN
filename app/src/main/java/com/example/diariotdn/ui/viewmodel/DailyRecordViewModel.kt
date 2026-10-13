@@ -71,7 +71,7 @@ class DailyRecordViewModel(
         }
     }
 
-    // Fecha de hoy en formato ISO (YYYY-MM-DD)
+    // Fecha de hoy estrictamente anclada a la fecha actual del sistema (YYYY-MM-DD)
     val todayIsoDate: String = DateUtils.getTodayIsoDate()
 
     // 1. FUNCIONES HELPER PRIVADAS DE FECHA Y TIMESTAMP
@@ -109,22 +109,12 @@ class DailyRecordViewModel(
     private val _isImportingDraft = MutableStateFlow(false)
     val isImportingDraft: StateFlow<Boolean> = _isImportingDraft.asStateFlow()
 
-    // Fecha seleccionada en la pantalla de historial o reportes diarios
-    private val _selectedHistoryDate = MutableStateFlow(DateUtils.getTodayIsoDate())
-    val selectedHistoryDate: StateFlow<String> = _selectedHistoryDate.asStateFlow()
+    // =========================================================================
+    // BLOQUE A: ESTADO DEL DÍA ACTUAL (HOY) - AISLADO Y ANCLADO A LocalDate.now()
+    // =========================================================================
 
-    // Registros del día de hoy (Individuales)
+    // Registros del día de hoy estrictamente
     val todayRecords: StateFlow<List<DailyRecord>> = dao.getRecordsByDate(todayIsoDate)
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
-
-    // Registros creados hasta la fecha seleccionada
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val recordsUpToSelectedDate: StateFlow<List<DailyRecord>> = _selectedHistoryDate
-        .flatMapLatest { date -> dao.getRecordsUpToDate(date) }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -150,23 +140,14 @@ class DailyRecordViewModel(
         initialValue = 0
     )
 
-    // 2. CÁLCULO ESTRICTO DE BACKLOG VISIBLE PARA LA FECHA SELECCIONADA
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val backlogVisibleHoy: StateFlow<List<DailyRecord>> = _selectedHistoryDate
-        .flatMapLatest { targetDate ->
-            dao.getRecordsUpToDate(targetDate).map { recordsUpToTarget ->
-                // Registros creados estrictamente en días anteriores a targetDate
-                val registrosViejos = recordsUpToTarget.filter { it.date < targetDate && it.loteId == null }
-                registrosViejos.filter { item ->
-                    val status = item.getTaskStatus()
-                    if (status == TaskStatus.COMPLETADO) {
-                        // Si está completado, SOLO se muestra si se completó en la fecha que estamos consultando
-                        isTimestampDeFecha(item.timestamp, targetDate)
-                    } else {
-                        // Si está pendiente o en proceso, se muestra como atrasado
-                        status == TaskStatus.PENDIENTE || status == TaskStatus.EN_PROCESO
-                    }
-                }
+    // CÁLCULO ESTRICTO DE BACKLOG VISIBLE HOY (Pendientes anteriores + completados HOY)
+    val backlogVisibleHoy: StateFlow<List<DailyRecord>> = dao.getAllPastRecords(todayIsoDate)
+        .map { list ->
+            list.filter { rec ->
+                val status = rec.getTaskStatus()
+                status == TaskStatus.PENDIENTE ||
+                        status == TaskStatus.EN_PROCESO ||
+                        (status == TaskStatus.COMPLETADO && isTimestampDeHoy(rec.timestamp))
             }
         }
         .stateIn(
@@ -196,56 +177,56 @@ class DailyRecordViewModel(
             initialValue = 0
         )
 
-    // 3. PRODUCCIÓN TOTAL COMPLETADA PARA LA FECHA SELECCIONADA (Resumen Ejecutivo)
-    @OptIn(ExperimentalCoroutinesApi::class)
+    // PRODUCCIÓN TOTAL COMPLETADA ESTRICTAMENTE HOY (Resumen Ejecutivo)
     val todayCompletedProductionRecords: StateFlow<List<DailyRecord>> = combine(
-        _selectedHistoryDate,
-        recordsUpToSelectedDate,
+        todayRecords,
         backlogVisibleHoy,
         allLotesWithRecords
-    ) { targetDate, recordsUpToDateList, backlogList, lotesList ->
-        val completedList = mutableListOf<DailyRecord>()
+    ) { todayRecs, backlogList, lotesList ->
+        val completedTodayList = mutableListOf<DailyRecord>()
 
-        // A) Registros creados hoy (o en targetDate) completados
-        val registrosDelDia = recordsUpToDateList.filter { it.date == targetDate && it.getTaskStatus() == TaskStatus.COMPLETADO }
-        completedList.addAll(registrosDelDia)
-
-        // B) Registros de Backlog completados en targetDate
-        val backlogCompletadoTarget = backlogList.filter { rec ->
-            rec.getTaskStatus() == TaskStatus.COMPLETADO && isTimestampDeFecha(rec.timestamp, targetDate)
+        // A) Registros creados hoy completados
+        todayRecs.filter { it.getTaskStatus() == TaskStatus.COMPLETADO }.let {
+            completedTodayList.addAll(it)
         }
-        completedList.addAll(backlogCompletadoTarget)
 
-        // C) Ítems de Lotes completados en targetDate
-        val batchCompletedOnTarget = lotesList.flatMap { it.records }.filter { rec ->
+        // B) Registros de Backlog completados HOY
+        backlogList.filter { rec ->
+            rec.getTaskStatus() == TaskStatus.COMPLETADO && isTimestampDeHoy(rec.timestamp)
+        }.let {
+            completedTodayList.addAll(it)
+        }
+
+        // C) Ítems de Lotes completados HOY
+        lotesList.flatMap { it.records }.filter { rec ->
             rec.getTaskStatus() == TaskStatus.COMPLETADO &&
-                    (rec.date == targetDate || isTimestampDeFecha(rec.timestamp, targetDate))
-        }
-        val existingIds = completedList.map { it.id }.toSet()
-        batchCompletedOnTarget.forEach { bRec ->
-            if (bRec.id !in existingIds) {
-                completedList.add(bRec)
+                    (rec.date == todayIsoDate || isTimestampDeHoy(rec.timestamp))
+        }.let { batchCompleted ->
+            val existingIds = completedTodayList.map { it.id }.toSet()
+            batchCompleted.forEach { bRec ->
+                if (bRec.id !in existingIds) {
+                    completedTodayList.add(bRec)
+                }
             }
         }
 
-        completedList
+        completedTodayList
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
 
-    // LISTA VISUAL REPORTE: Registros individuales del día + Resumen agrupado de Lotes completados ese día
+    // LISTA VISUAL REPORTE DIARIO HOY: Registros individuales de hoy + Resumen agrupado de Lotes completados hoy
     val reportDisplayRecords: StateFlow<List<DailyRecord>> = combine(
-        _selectedHistoryDate,
-        recordsUpToSelectedDate,
+        todayRecords,
         todayCompletedProductionRecords,
         allLotesWithRecords
-    ) { targetDate, recordsUpToDateList, completedProductionList, lotesList ->
+    ) { todayRecs, completedProductionList, lotesList ->
         val reportList = mutableListOf<DailyRecord>()
 
         // 1. Registros individuales del día (sin lote)
-        reportList.addAll(recordsUpToDateList.filter { it.date == targetDate && it.loteId == null })
+        reportList.addAll(todayRecs.filter { it.loteId == null })
 
         // 2. Agrupación de Ítems de Lotes completados en la fecha por loteId
         val batchCompletedOnDate = completedProductionList.filter { it.loteId != null }
@@ -258,7 +239,7 @@ class DailyRecordViewModel(
                 val loteName = loteWithRecords?.lote?.nombreLote ?: "Lote #$loteId"
                 val firstItem = group.first()
                 val count = group.size
-                val displayDate = DateUtils.isoToDisplayDate(targetDate)
+                val displayDate = DateUtils.isoToDisplayDate(todayIsoDate)
                 val summaryText = "$count ${firstItem.producto} del lote $loteName"
 
                 val isBatchFullyCompleted = loteWithRecords != null &&
@@ -273,7 +254,7 @@ class DailyRecordViewModel(
 
                 val virtualRecord = DailyRecord(
                     id = -loteId,
-                    date = targetDate,
+                    date = todayIsoDate,
                     formattedDate = displayDate,
                     cantidad = count.toString(),
                     producto = firstItem.producto,
@@ -296,7 +277,7 @@ class DailyRecordViewModel(
         initialValue = emptyList()
     )
 
-    // Consultas Reactivas Unificadas para el Dashboard / KPIs
+    // Consultas Reactivas Unificadas para el Dashboard / KPIs de Hoy
     val todayTotalCount: StateFlow<Int> = dao.getTodayTotalCount(todayIsoDate)
         .stateIn(
             scope = viewModelScope,
@@ -403,7 +384,14 @@ class DailyRecordViewModel(
         _mostrarLotes.value = show
     }
 
-    // Registros del Historial (Insensible a tildes y mayúsculas + Filtro por Estatus + Toggle Lotes)
+    // =========================================================================
+    // BLOQUE B: ESTADO DEL HISTORIAL DE FECHAS - TOTALMENTE AISLADO DE HOY
+    // =========================================================================
+
+    // Fecha seleccionada en la pantalla de historial (por defecto ayer)
+    private val _selectedHistoryDate = MutableStateFlow(DateUtils.getYesterdayIsoDate())
+    val selectedHistoryDate: StateFlow<String> = _selectedHistoryDate.asStateFlow()
+
     private val _historySearchQuery = MutableStateFlow("")
     val historySearchQuery: StateFlow<String> = _historySearchQuery.asStateFlow()
 
@@ -458,6 +446,12 @@ class DailyRecordViewModel(
 
     fun toggleHistoryMostrarLotes(show: Boolean) {
         _historyMostrarLotes.value = show
+    }
+
+    fun setSelectedHistoryDate(isoDate: String) {
+        _selectedHistoryDate.value = isoDate
+        _historySearchQuery.value = ""
+        _historyStatusFilter.value = null
     }
 
     // Modo Búsqueda Global en Toda la Base de Datos
@@ -643,12 +637,6 @@ class DailyRecordViewModel(
     fun updateApellidosNombres(value: String) { _apellidosNombres.value = value }
     fun updateCodigoUnidad(value: String) { _codigoUnidad.value = value }
     fun updateTextoExtra(value: String) { _textoExtra.value = value }
-
-    fun setSelectedHistoryDate(isoDate: String) {
-        _selectedHistoryDate.value = isoDate
-        _historySearchQuery.value = ""
-        _historyStatusFilter.value = null
-    }
 
     /**
      * Cicla el estado de un registro entre PENDIENTE -> EN_PROCESO -> COMPLETADO
