@@ -369,7 +369,6 @@ fun BackupScreen(
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
@@ -378,6 +377,8 @@ fun BackupScreen(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
+
+                    Spacer(modifier = Modifier.weight(1f))
 
                     IconButton(onClick = {
                         val permisos = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
@@ -539,8 +540,8 @@ fun BackupScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val deleted = FileManager.eliminarReporte(context, archivo.uri)
-                        if (deleted) {
+                        val exito = FileManager.eliminarReporteFisico(context, TipoReporte.BACKUP, archivo.nombre)
+                        if (exito) {
                             Toast.makeText(context, "Copia de seguridad eliminada", Toast.LENGTH_SHORT).show()
                             refreshSavedBackups()
                         } else {

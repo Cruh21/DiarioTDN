@@ -74,7 +74,7 @@ enum class ScreenOption(val title: String) {
     LOTES("Gestión de Lotes"),
     REPORTES("Reportes"),
     BACKUP("Copia de Seguridad"),
-    CONFIG("Configurar Categorías")
+    CONFIG("Configuración")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -291,7 +291,7 @@ fun AppNavigationDrawer(
                                 contentDescription = null
                             )
                         },
-                        label = { Text("Configurar Categorías") },
+                        label = { Text("Configuración") },
                         selected = currentScreen == ScreenOption.CONFIG,
                         onClick = {
                             scope.launch { drawerState.close() }

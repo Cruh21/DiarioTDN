@@ -1,6 +1,12 @@
 package com.example.diariotdn.ui.screens
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +33,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -52,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import com.example.diariotdn.data.CategoryOption
 import com.example.diariotdn.data.CategoryType
 import com.example.diariotdn.ui.viewmodel.DailyRecordViewModel
+import com.example.diariotdn.util.FileManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +68,28 @@ fun ConfigCategoriesScreen(
     viewModel: DailyRecordViewModel,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+
+    // Estado para la ubicación de almacenamiento persistente SAF
+    var uriActual by remember { mutableStateOf(FileManager.obtenerUriDirectorioBase(context)) }
+
+    val launcherSAF = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        uri?.let {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            try {
+                context.contentResolver.takePersistableUriPermission(it, flags)
+                FileManager.guardarUriDirectorioBase(context, it.toString())
+                uriActual = it.toString()
+                Toast.makeText(context, "Ubicación de almacenamiento vinculada con éxito", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Toast.makeText(context, "Error al vincular carpeta: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     // Excluir CANTIDAD de la pantalla de configuración visual
     val editableCategories = remember { CategoryType.entries.filter { it != CategoryType.CANTIDAD } }
     var selectedCategory by remember { mutableStateOf(editableCategories.firstOrNull() ?: CategoryType.PRODUCTO) }
@@ -118,6 +149,68 @@ fun ConfigCategoriesScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Componente UI: Ubicación del Almacenamiento
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        Toast.makeText(
+                            context,
+                            "Importante: Selecciona la carpeta principal 'Diario TDN', no sus subcarpetas.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        launcherSAF.launch(null)
+                    },
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "Ubicación del almacenamiento",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    val rutaLegible = if (uriActual.isNullOrEmpty()) {
+                        "Toca para seleccionar la carpeta 'Diario TDN'"
+                    } else {
+                        try {
+                            val decodedPath = Uri.parse(uriActual).path
+                                ?.replace("/tree/primary:", "/storage/emulated/0/")
+                                ?.replace("tree/primary:", "/storage/emulated/0/")
+                            decodedPath ?: uriActual
+                        } catch (e: Exception) {
+                            uriActual
+                        }
+                    }
+
+                    Text(
+                        text = rutaLegible.toString(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+
+                    Text(
+                        text = "Se utiliza para guardar y leer los reportes y las copias de seguridad de la base de datos.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+
             // Tarjeta con información del módulo
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -139,7 +232,7 @@ fun ConfigCategoriesScreen(
                     )
                     Column {
                         Text(
-                            text = "Configuración de Opciones",
+                            text = "Configuración",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSecondaryContainer
